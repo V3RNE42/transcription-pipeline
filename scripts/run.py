@@ -1,16 +1,16 @@
 #!/usr/local/lib/hermes-agent/venv/bin/python3
 """
-YouTube Pipeline Unificado — 3 estrategias en cascada.
+Unified YouTube transcription pipeline — 3 cascading strategies.
 
-Uso:  python3 pipeline.py <youtube_url>
-Salida: JSON a stdout con title, video_id, slug, duration, lang,
+Usage: python3 run.py <youtube_url>
+Output: JSON to stdout with title, video_id, slug, duration, lang,
         raw_segments, blocks, clean_transcript, method.
 
-E1 → YouTube Transcript API (rápido, gold standard)
-E3 → yt-dlp + faster-whisper chunked (10 min por chunk, modelo cargado una vez)
-E2 → yt-dlp + faster-whisper whole file (último recurso)
+E1 → YouTube Transcript API (fast, gold standard)
+E3 → yt-dlp + faster-whisper chunked (10 min per chunk, model loaded once)
+E2 → yt-dlp + faster-whisper whole file (last resort)
 
-El audio descargado se elimina tras la transcripción.
+Downloaded audio is deleted after transcription.
 """
 
 import json
@@ -53,7 +53,7 @@ def fmt_duration(seconds: int) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 def get_video_title(video_id: str) -> str:
-    """Obtener título vía yt-dlp (fallback a scraping HTML)."""
+    """Get video title via yt-dlp (fallback to HTML scraping)."""
     try:
         result = subprocess.run(
             ['yt-dlp', '--print', 'title',
@@ -106,10 +106,10 @@ def strategy_api(video_id: str) -> dict | None:
 
 # ─── E3 + E2: faster-whisper ────────────────────────────────────────────────
 
-WHISPER_MODEL = "tiny"  # rápido para español/VO, 5× más rápido que base
+WHISPER_MODEL = "tiny"  # fast for Spanish/VO, 5× faster than base
 
 def _run_whisper(audio_path: str, model_name: str = WHISPER_MODEL) -> tuple[list[dict], str]:
-    """Ejecuta faster-whisper y devuelve (segmentos [{start, duration, text}, ...], lang)."""
+    """Run faster-whisper and return (segments [{start, duration, text}, ...], lang)."""
     from faster_whisper import WhisperModel
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
     segs, info = model.transcribe(audio_path, beam_size=5)
@@ -122,17 +122,17 @@ def _run_whisper(audio_path: str, model_name: str = WHISPER_MODEL) -> tuple[list
 
 def strategy_chunked(video_id: str) -> dict | None:
     """
-    E3: Descarga audio, divide en chunks de 10 min, transcribe cada uno,
-    reconstruye segmentos con timestamps reales. Elimina audio al final.
+    E3: Download audio, split into 10 min chunks, transcribe each,
+    reconstruct segments with real timestamps. Delete audio at end.
     """
     audio_path = None
     try:
-        # Descargar audio
+        # Download audio
         audio_path = _download_audio(video_id)
         if not audio_path:
             return None
 
-        # Obtener duración total con ffprobe
+        # Get total duration with ffprobe
         dur_result = subprocess.run(
             ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
              '-of', 'csv=p=0', audio_path],
@@ -142,11 +142,11 @@ def strategy_chunked(video_id: str) -> dict | None:
         chunk_sec = 600  # 10 min
 
         if total_dur <= chunk_sec:
-            # Video corto, transcribir completo
+            # Short video, transcribe entirely
             segments, lang = _run_whisper(audio_path)
             return {"segments": segments, "lang": lang, "method": "whisper-chunked"}
         
-        # Dividir audio con ffmpeg segment
+        # Split audio with ffmpeg segment
         tmpdir = tempfile.mkdtemp(prefix='whisper_chunks_')
         pattern = os.path.join(tmpdir, 'chunk_%03d.mp3')
         subprocess.run(
@@ -155,7 +155,7 @@ def strategy_chunked(video_id: str) -> dict | None:
             capture_output=True, text=True, timeout=total_dur + 60
         )
 
-        # Cargar modelo UNA SOLA VEZ y transcribir cada chunk
+        # Load model ONCE and transcribe each chunk
         from faster_whisper import WhisperModel
         model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
         all_segments = []
@@ -179,7 +179,7 @@ def strategy_chunked(video_id: str) -> dict | None:
 
         lang = detected_lang
 
-        # Limpiar chunks
+        # Clean up chunks
         for cf in chunk_files:
             try:
                 os.remove(os.path.join(tmpdir, cf))
@@ -202,7 +202,7 @@ def strategy_chunked(video_id: str) -> dict | None:
 
 def strategy_whole(video_id: str) -> dict | None:
     """
-    E2: Último recurso — descarga audio completo, transcribe en una pasada.
+    E2: Last resort — download full audio, transcribe in one pass.
     """
     audio_path = None
     try:
@@ -220,7 +220,7 @@ def strategy_whole(video_id: str) -> dict | None:
 
 
 def _download_audio(video_id: str) -> str | None:
-    """Descarga audio a un directorio temporal. Devuelve path o None."""
+    """Download audio to a temp directory. Returns path or None."""
     outdir = tempfile.mkdtemp(prefix='yt_audio_')
     outtmpl = os.path.join(outdir, '%(id)s.%(ext)s')
     result = subprocess.run(
@@ -246,14 +246,14 @@ def _download_audio(video_id: str) -> str | None:
 
 
 def _detect_lang(segments: list[dict]) -> str:
-    """Detecta idioma de los segmentos. Placeholder — no usado actualmente."""
+    """Detect language from segments. Placeholder — not currently used."""
     return 'unknown'
 
 
 # ─── QC ─────────────────────────────────────────────────────────────────────
 
 def qc_check(segments: list[dict]) -> dict:
-    """Quality control: cobertura, orden cronológico, integridad."""
+    """Quality control: coverage, chronological order, integrity."""
     if not segments:
         return {"coverage": 0.0, "chronological": False, "integrity": False,
                 "seg_count": 0, "total_sec": 0}
@@ -268,7 +268,7 @@ def qc_check(segments: list[dict]) -> dict:
     actual = len(segments)
     integrity = actual >= expected * 0.5  # al menos 50% de lo esperado
 
-    # Coverage: qué % del tiempo total está cubierto por segmentos
+    # Coverage: what % of total time is covered by segments
     covered = sum(s["duration"] for s in segments)
     coverage = min(100.0, round(covered / total_sec * 100, 1)) if total_sec > 0 else 0
 
@@ -306,7 +306,7 @@ def cleanup(segments: list[dict]) -> dict:
         else:
             current_block["texts"].append(s["text"])
 
-    # Último bloque
+    # Last block
     if current_block["texts"]:
         full_text = " ".join(current_block["texts"])
         blocks.append({
@@ -314,7 +314,7 @@ def cleanup(segments: list[dict]) -> dict:
             "text": full_text
         })
 
-    # Construir transcript limpio
+    # Build clean transcript
     clean_parts = []
     for b in blocks:
         wrapped = textwrap.fill(b["text"], width=80)
@@ -342,13 +342,13 @@ def fmt_ts(seconds: float) -> str:
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: pipeline.py <youtube_url>"}))
+        print(json.dumps({"error": "Usage: run.py <youtube_url>"}))
         sys.exit(1)
 
     url = sys.argv[1]
     video_id = extract_video_id(url)
     if not video_id:
-        print(json.dumps({"error": f"No se pudo extraer video_id de: {url}"}))
+        print(json.dumps({"error": f"Could not extract video_id from: {url}"}))
         sys.exit(1)
 
     # Obtener metadata
@@ -370,7 +370,7 @@ def main():
         method = "whisper-whole"
 
     if result is None:
-        print(json.dumps({"error": "Todas las estrategias fallaron", "video_id": video_id}))
+        print(json.dumps({"error": "All strategies failed", "video_id": video_id}))
         sys.exit(1)
 
     segments = result["segments"]
@@ -382,7 +382,7 @@ def main():
     # Cleanup
     cleaned = cleanup(segments)
 
-    # Duración
+    # Duration
     duration_sec = qc["total_sec"]
 
     output = {
