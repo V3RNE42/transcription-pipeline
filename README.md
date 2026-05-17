@@ -200,8 +200,56 @@ This separation ensures the LLM's reasoning budget is spent on what matters (sum
 ```
 transcription-pipeline/
 ├── README.md              ← This file
+├── SKILL.md               ← Agent workflow (concise)
 ├── requirements.txt
 ├── .gitignore
 └── scripts/
     └── run.py             ← Unified pipeline (3 strategies)
 ```
+
+## Pitfalls
+
+- **E3 before E2:** Always try chunked whisper (10 min) before whole-file. Chunking loads the model once, handles memory better.
+- **yt-dlp output template (CRITICAL):** Use a temp directory with `%(id)s.%(ext)s` pattern. DO NOT use `NamedTemporaryFile` with `.mp3` suffix — yt-dlp treats it as a template and produces 0-byte files.
+- **PATH for yt-dlp:** yt-dlp lives in `venv/bin/`. Bare `subprocess.run(['yt-dlp', ...])` calls fail with `FileNotFoundError` if venv bin isn't on PATH. Either prepend PATH or use the full path.
+- **yt-dlp JS runtime:** Without `--extractor-args youtube:js_es=deno`, yt-dlp can fail silently on extraction. Always include this flag.
+- **Whisper Segment API:** `faster_whisper` segments do NOT have `.duration`. Use `segment.end - segment.start`.
+- **Audio cleanup:** Always use `shutil.rmtree()` on the parent temp directory, not `os.remove()` on the file. The file sits in a dedicated temp dir.
+- **Language detection:** Capture `info.language` from `segs, info = model.transcribe(...)`. Language is NOT in the segment objects.
+- **stdout buffering:** In scripts run as background processes, stdout needs `sys.stdout.reconfigure(line_buffering=True)` to flush output in real time.
+
+## Vault Interlinking (Append-Only)
+
+After saving a new vault note, scan existing transcripts and add `[[wikilinks]]` between related ones (shared topics: agents, models, tools, themes).
+
+**CRITICAL: Append-only pattern.** Never read the whole file and rewrite it. `read_file()` from agent tools adds line numbers that corrupt the file.
+
+```python
+def add_link(vault_path, link_name):
+    \"\"\"Append a [[wikilink]] to the Conexiones section. Never reads full file.\"\"\"
+    with open(vault_path, "rb") as f:
+        f.seek(-min(500, os.path.getsize(vault_path)), os.SEEK_END)
+        tail = f.read().decode()
+    if link_name in tail:
+        return  # already linked
+
+    if "## Conexiones" in tail:
+        with open(vault_path, "a") as f:
+            f.write(f"- [[{link_name}]]\\n")
+    else:
+        with open(vault_path, "a") as f:
+            f.write(f"\\n\\n## Conexiones\\n\\n- [[{link_name}]]\\n")
+```
+
+**Guardrails:**
+- Skip files < 200 bytes (corrupted, don't touch)
+- Only read last 500 bytes — never open full file
+- Only use append mode (`"a"`) — never write mode (`"w"`)
+
+## Error Handling
+
+- **Transcript disabled / API failure:** `scripts/run.py` handles cascade automatically: E1 fails → E3 (chunked whisper) → E2 (whole file). No user intervention needed.
+- **Private/unavailable video:** relay the error and ask the user to verify the URL.
+- **Dependency missing:** install requirements from `requirements.txt`.
+- **All strategies fail:** Script outputs `{"error": "All strategies failed", "video_id": "..."}`. Double-check URL and dependencies.
+
