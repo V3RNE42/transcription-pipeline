@@ -122,7 +122,8 @@ def _run_whisper(audio_path: str, model_name: str = WHISPER_MODEL) -> tuple[list
 
 def strategy_chunked(video_id: str) -> dict | None:
     """
-    E3: Download audio, split into 10 min chunks, transcribe each,
+    E3: Download audio, calculate N equal chunks based on how many 5-min
+    segments fit in total (N = floor(total/300) + 1), transcribe each,
     reconstruct segments with real timestamps. Delete audio at end.
     """
     audio_path = None
@@ -139,18 +140,22 @@ def strategy_chunked(video_id: str) -> dict | None:
             capture_output=True, text=True, timeout=30
         )
         total_dur = float(dur_result.stdout.strip() or 0)
-        chunk_sec = 600  # 10 min
 
-        if total_dur <= chunk_sec:
-            # Short video, transcribe entirely
+        if total_dur <= 300:
+            # Short video (<=5 min), transcribe entirely
             segments, lang = _run_whisper(audio_path)
             return {"segments": segments, "lang": lang, "method": "whisper-chunked"}
-        
+
+        # Calculate equal-sized chunks: N = floor(total/300) + 1
+        num_chunks = int(total_dur // 300) + 1
+        chunk_sec = total_dur / num_chunks
+
         # Split audio with ffmpeg segment
         tmpdir = tempfile.mkdtemp(prefix='whisper_chunks_')
         pattern = os.path.join(tmpdir, 'chunk_%03d.mp3')
         subprocess.run(
-            ['ffmpeg', '-i', audio_path, '-f', 'segment', '-segment_time', '600',
+            ['ffmpeg', '-i', audio_path, '-f', 'segment',
+             '-segment_time', str(chunk_sec),
              '-c', 'copy', pattern],
             capture_output=True, text=True, timeout=total_dur + 60
         )
