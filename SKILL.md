@@ -432,10 +432,7 @@ The only time to inform the user is if ALL fallback methods fail — and even th
 
 For YouTube URLs, use the **code-first sequential pipeline**.
 
-⚠️ **CRITICAL BEHAVIORAL RULES (violations produce user corrections):**
-
-1. **NEVER use `mcp_fetch_fetch_youtube_transcript`** as the primary or any method for YouTube transcripts. The MCP tool may detect the transcript language but return empty content for auto-generated captions. yt-dlp is the specified primary method (below). See Pitfall #22.
-2. **SILENT FALLBACK IS AUTOMATIC.** Do NOT ask the user "shall I download and transcribe?" or "do you want me to proceed with the audio pipeline?" — this is the expected automatic behavior. If a method fails, silently proceed to the next method in the chain. The user should never see a question about fallback. See Pitfall #23.
+⚠️ **CRITICAL BEHAVIORAL RULES (violations produce user corrections):**\n\n**0. NEVER use mcp_fetch_fetch_youtube_transcript for YouTube transcripts. EVER.** The MCP tool detects that captions exist but may return empty content. This session you violated this rule. Use yt-dlp TTML as the primary method. If you see yourself about to call mcp_fetch_fetch_youtube_transcript for a YouTube URL, STOP — that's a violation.\n\n1. **SILENT FALLBACK IS AUTOMATIC.** Do NOT ask the user "shall I download and transcribe?" or "do you want me to proceed with the audio pipeline?" — this is the expected automatic behavior. If a method fails, silently proceed to the next method in the chain. The user should never see a question about fallback. See Pitfall #23.
 3. **CODE-FIRST: All mechanical work is invisible to the user.** Only the final summary text is delivered to chat. No progress messages, no "under the hood" explanations, no intermediate notifications.
 
 **Fallback chain (automatic, no user consultation at any step):**
@@ -549,12 +546,12 @@ Typical result: 384 segments → 384 cleaned segments with no duplicate words. T
 | Constraint | Value |
 |-----------|-------|
 | Max length | **Tiered by duration** (measured via `len(summary)` in code before delivery): ≤20 min → 300 chars, 20-40 min → 450 chars, 40-60 min → 800 chars, >60 min → 1000 chars |
-| Enforcement | `assert len(summary) <= TIER_LIMIT, f"Summary too long: {len(summary)} > {TIER_LIMIT}"` — crash hard if over limit |
+| Enforcement | `python3 scripts/validate_summary.py --duration <dur_sec>` via pipe or `--text` — validates tier, truncates at sentence boundary, exits 0 (ok) or 1 (truncated). See `scripts/validate_summary.py`. |
 | Language | Always the original language of the content (detected from the transcript). Never default to English or translate. Only override when the user explicitly requests a specific language. |
 | Content | Thesis + key arguments + practical takeaways. Concise, information-dense. |
 | Format | **Plain text only.** No headers (`##`, `###`, `---`). No bold (`**`). No italic (`*`). No emoji (🚀, ✅, etc.). No bullets (`-`, `*`, `1.`). No numbered lists. No timestamps (`[MM:SS]`). No line breaks — single paragraph. Pure prose. |
 | Message content | ONLY the summary text. No metadata. No vault path. No QC scores. No timing data. No "saved to vault" messages. No structural commentary. Nothing else. |
-| Verification | Before any character is sent to chat: measure `len(summary)`. Compare against the tier limit. If over, truncate at the last sentence boundary before the limit and re-measure. Log tier + actual length to manifest but do NOT show to user. |
+| Verification | Pipe the summary through `python3 scripts/validate_summary.py --duration <dur_sec>` before delivery. Parse JSON output: `exit_code=0` → ok, `exit_code=1` → was truncated (use `validated_text`), `exit_code=2` → error. Never send raw summary without validation. |
 
 **Examples of CORRECT delivery (what the user sees):**
 > "This video covers the Hermes Agent Velocity Update, introducing progressive tool loading to reduce context window usage, an agent swarm system for parallel task execution via kanban, model integrations including Qwen 3.7 Max and Opus 4.8, a codebase refactor from 16K to 3.8K lines, an MCP catalog, prompt injection defense, and a rebuilt session search reported as 4500 times faster."
@@ -580,6 +577,7 @@ The pipeline relies on these Python scripts in `SKILL_DIR/scripts/`. Full API do
 | `recompose_transcript.py` | P8 | `recompose(transcripts, chunking_enabled)` | stdlib only |
 | `render_outputs.py` | P9–P10 | `render_outputs(final_data, workspace, output_formats)` | stdlib only |
 | `transcript_sanity.py` | **P11** | `python3 scripts/transcript_sanity.py <vault_file.md>` | stdlib only (no deps) |
+| `validate_summary.py` | **P12** | `echo "$summary" \| python3 scripts/validate_summary.py --duration <sec>` | stdlib only |
 
 ## References
 
