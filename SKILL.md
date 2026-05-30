@@ -546,12 +546,12 @@ Typical result: 384 segments → 384 cleaned segments with no duplicate words. T
 | Constraint | Value |
 |-----------|-------|
 | Max length | **Tiered by duration** (measured via `len(summary)` in code before delivery): ≤20 min → 300 chars, 20-40 min → 450 chars, 40-60 min → 800 chars, >60 min → 1000 chars |
-| Enforcement | `python3 scripts/validate_summary.py --duration <dur_sec>` via pipe or `--text` — validates tier, truncates at sentence boundary, exits 0 (ok) or 1 (truncated). See `scripts/validate_summary.py`. |
+| Enforcement | `echo "$summary" | python3 scripts/validate_summary.py --duration <dur_sec>` — exits 0 (pass) or 1 (too long, see `excess_chars`). If it fails, **discard the summary and regenerate a shorter one.** Repeat until exit_code=0. Never truncate. |
 | Language | Always the original language of the content (detected from the transcript). Never default to English or translate. Only override when the user explicitly requests a specific language. |
 | Content | Thesis + key arguments + practical takeaways. Concise, information-dense. |
 | Format | **Plain text only.** No headers (`##`, `###`, `---`). No bold (`**`). No italic (`*`). No emoji (🚀, ✅, etc.). No bullets (`-`, `*`, `1.`). No numbered lists. No timestamps (`[MM:SS]`). No line breaks — single paragraph. Pure prose. |
 | Message content | ONLY the summary text. No metadata. No vault path. No QC scores. No timing data. No "saved to vault" messages. No structural commentary. Nothing else. |
-| Verification | Pipe the summary through `python3 scripts/validate_summary.py --duration <dur_sec>` before delivery. Parse JSON output: `exit_code=0` → ok, `exit_code=1` → was truncated (use `validated_text`), `exit_code=2` → error. Never send raw summary without validation. |
+| Verification | Pipe summary through `python3 scripts/validate_summary.py --duration <sec>`. If `exit_code=1`, discard and **regenerate a shorter summary**. Re-validate. Never truncate. Never send an unvalidated summary to chat. |
 
 **Examples of CORRECT delivery (what the user sees):**
 > "This video covers the Hermes Agent Velocity Update, introducing progressive tool loading to reduce context window usage, an agent swarm system for parallel task execution via kanban, model integrations including Qwen 3.7 Max and Opus 4.8, a codebase refactor from 16K to 3.8K lines, an MCP catalog, prompt injection defense, and a rebuilt session search reported as 4500 times faster."

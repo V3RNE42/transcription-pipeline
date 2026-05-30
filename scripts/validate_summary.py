@@ -1,28 +1,43 @@
 #!/usr/bin/env python3
 """
-validate_summary.py — Enforce tiered summary length with sentence-boundary truncation.
+validate_summary.py — Validate summary length against duration-based tier limits.
+
+NO truncation. If the summary exceeds the tier limit, the script rejects it
+with exit_code=1 and reports by how much. The caller must regenerate a shorter
+summary until exit_code=0.
 
 Usage (pipe mode):
     echo "summary text here" | python3 validate_summary.py --duration 593
 
-Usage (file mode):
+Usage (direct mode):
     python3 validate_summary.py --text "summary text" --duration 593
 
-Exits with code 0 on success, 1 if truncated, 2 if error.
-Prints JSON to stdout with: validated_text, original_length, validated_length,
-                             tier_limit, tier_label, truncated, exit_code.
+Exit codes:
+    0 = PASS — summary fits within tier limit
+    1 = FAIL — summary is too long (see excess_chars in JSON output)
+    2 = ERROR — empty input or invalid arguments
+
+Output JSON:
+    {
+        "original_text": "...",
+        "original_length": 384,
+        "tier_label": "≤20 min",
+        "tier_limit": 300,
+        "excess_chars": 84,
+        "fits": false,
+        "exit_code": 1
+    }
 """
 
 import argparse
 import json
-import re
 import sys
 
 # Tiers: (max_seconds, label, char_limit)
 TIERS = [
-    (1200, "≤20 min", 300),    # 20 min
-    (2400, "20-40 min", 450),  # 40 min
-    (3600, "40-60 min", 800),  # 60 min
+    (1200, "≤20 min", 300),
+    (2400, "20-40 min", 450),
+    (3600, "40-60 min", 800),
     (float("inf"), ">60 min", 1000),
 ]
 
@@ -32,69 +47,30 @@ def get_tier(duration_sec: float) -> tuple[str, int]:
     for max_sec, label, limit in TIERS:
         if duration_sec <= max_sec:
             return label, limit
-    return ">60 min", 1000  # fallback
-
-
-def truncate_at_sentence(text: str, limit: int) -> str:
-    """Truncate text at the last sentence boundary before `limit` chars."""
-    if len(text) <= limit:
-        return text
-
-    # Try sentence-ending punctuation within the limit
-    truncated = text[:limit]
-    # Find last sentence boundary (. ? !) followed by space or end
-    for sep in (". ", "? ", "! "):
-        pos = truncated.rfind(sep)
-        if pos > limit * 0.5:  # Only truncate if we keep at least half
-            return truncated[: pos + 1]
-
-    # Try last space as fallback
-    last_space = truncated.rfind(" ")
-    if last_space > limit * 0.5:
-        return truncated[:last_space] + "..."
-
-    # Hard truncate with ellipsis
-    return truncated.rstrip() + "..."
+    return ">60 min", 1000
 
 
 def validate_summary(text: str, duration_sec: float) -> dict:
     """
-    Validate and optionally truncate a summary to fit the tier limit.
+    Validate summary length against tier limit.
 
-    Returns dict with:
-        validated_text: str
-        original_length: int
-        validated_length: int
-        tier_label: str
-        tier_limit: int
-        truncated: bool
-        exit_code: int  (0 = ok, 1 = was truncated)
+    NO truncation — if too long, returns reject signal with excess_chars.
+    The caller must regenerate a shorter summary and re-validate.
     """
     tier_label, tier_limit = get_tier(duration_sec)
     original_length = len(text)
+    excess = original_length - tier_limit
 
-    if original_length <= tier_limit:
-        return {
-            "validated_text": text,
-            "original_length": original_length,
-            "validated_length": original_length,
-            "tier_label": tier_label,
-            "tier_limit": tier_limit,
-            "truncated": False,
-            "exit_code": 0,
-        }
-
-    validated = truncate_at_sentence(text, tier_limit)
-    validated_length = len(validated)
+    fits = original_length <= tier_limit
 
     return {
-        "validated_text": validated,
+        "original_text": text,
         "original_length": original_length,
-        "validated_length": validated_length,
         "tier_label": tier_label,
         "tier_limit": tier_limit,
-        "truncated": True,
-        "exit_code": 1,
+        "excess_chars": max(0, excess),
+        "fits": fits,
+        "exit_code": 0 if fits else 1,
     }
 
 
@@ -117,15 +93,12 @@ def main():
     args = parser.parse_args()
 
     if args.text:
-        text = args.text
+        text = args.text.strip()
     else:
         text = sys.stdin.read().strip()
 
     if not text:
-        result = {
-            "error": "Empty summary text",
-            "exit_code": 2,
-        }
+        result = {"error": "Empty summary text", "exit_code": 2}
         print(json.dumps(result))
         sys.exit(2)
 
