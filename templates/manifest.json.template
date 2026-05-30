@@ -1,0 +1,116 @@
+{
+  // ====================================================================
+  //  Hermes Transcription Pipeline — Manifest Template
+  //  Replace every {{placeholder}} with a concrete value at render time.
+  //  Booleans and numbers must NOT be quoted; strings (including dates)
+  //  MUST be quoted.  The template engine should handle this — keep
+  //  the quotes in the template as-is so the JSON stays valid.
+  // ====================================================================
+
+  // Pipeline metadata -------------------------------------------------
+  "pipeline_version": "1.0",
+  "job_id": "{{job_id}}",
+  "created_at": "{{created_at}}",
+
+  // Source file -------------------------------------------------------
+  //   original_path  — path the user provided (may be a symlink, cloud
+  //                    URL, or local file)
+  //   final_path     — canonical local copy after ingestion (always
+  //                    inside the pipeline working directory)
+  //   file_size_bytes — integer, bytes on disk of the original source
+  //   source_type    — one of: "audio", "video", "youtube", "telegram"
+  "source": {
+    "original_path": "{{source_path}}",
+    "final_path": "{{source_final_path}}",
+    "file_size_bytes": {{file_size}},
+    "source_type": "{{source_type}}"
+  },
+
+  // Media information (from ffprobe / mediainfo) ----------------------
+  //   duration_sec      — total duration in seconds (float)
+  //   size_bytes        — ingested-file size (bytes, integer)
+  //   bitrate_kbps      — overall bitrate in kb/s (integer, 0 if unknown)
+  //   has_audio_track   — boolean, whether any audio stream exists
+  //   audio_channels    — number of audio channels (integer, 0 if none)
+  //   audio_sample_rate — sample rate in Hz (integer, 0 if none)
+  //   video_codec       — codec name string, or "" if none
+  //   audio_codec       — codec name string, or "" if none
+  //   container         — container format (e.g. "mp4", "webm", "ogg")
+  //   risks             — array of strings flagging detected issues
+  //                       (e.g. "low_bitrate", "multiple_audio_streams",
+  //                        "variable_frame_rate", "corrupt_header")
+  "media_info": {
+    "duration_sec": {{duration}},
+    "size_bytes": {{size}},
+    "bitrate_kbps": {{bitrate}},
+    "has_audio_track": true,
+    "audio_channels": {{channels}},
+    "audio_sample_rate": {{sample_rate}},
+    "video_codec": "{{video_codec}}",
+    "audio_codec": "{{audio_codec}}",
+    "container": "{{container}}",
+    "risks": []
+  },
+
+  // Chunking configuration & results ---------------------------------
+  //   enabled               — boolean, whether chunking was performed
+  //   policy                — policy name, e.g. "uniform" or "silence"
+  //   target_chunk_duration_sec — target seconds per chunk (integer)
+  //   chunk_overlap_sec     — overlap between adjacent chunks (float)
+  //   total_chunks          — number of chunks produced (integer)
+  //   coverage_start_sec    — first second of media covered (float)
+  //   coverage_end_sec      — last second of media covered (float)
+  //   chunks                — array of chunk objects; each chunk:
+  //       {
+  //         "index": 0,           // zero-based chunk index
+  //         "start_sec": 0.0,     // start offset in seconds (float)
+  //         "end_sec": 30.0,      // end offset in seconds (float)
+  //         "file": "chunk_000.wav",  // relative path to chunk file
+  //         "status": "pending"   // one of: pending | transcribed | failed | skipped
+  //       }
+  "chunking": {
+    "enabled": {{chunking_enabled}},
+    "policy": "{{chunking_policy}}",
+    "target_chunk_duration_sec": {{target_duration}},
+    "chunk_overlap_sec": {{overlap}},
+    "total_chunks": 0,
+    "coverage_start_sec": 0,
+    "coverage_end_sec": 0,
+    "chunks": []
+  },
+
+  // Transcription results ---------------------------------------------
+  //   engine                — transcription engine (e.g. "whisper", "deepgram")
+  //   model                 — model name/version (e.g. "large-v3", "nova-2")
+  //   language              — ISO 639-1 code (e.g. "en", "es") or "auto"
+  //   total_chunks_transcribed — number of successfully transcribed chunks
+  //   failed_chunks         — number of chunks that failed transcription
+  "transcription": {
+    "engine": "{{engine}}",
+    "model": "{{model}}",
+    "language": "{{language}}",
+    "total_chunks_transcribed": 0,
+    "failed_chunks": 0
+  },
+
+  // Output files ------------------------------------------------------
+  //   Key-value map of output format → file path (relative to
+  //   pipeline output directory).  Populated after the assembly
+  //   step.  Typical keys: "md", "json", "srt", "vtt", "txt".
+  "outputs": {},
+
+  // Quality assessment ------------------------------------------------
+  //   status          — one of: "passed" | "passed_with_warnings" |
+  //                     "failed" | "incomplete"
+  //   checks          — list of quality-check results, each:
+  //       { "check": "check_name", "result": "pass" | "fail" | "warn",
+  //         "detail": "human-readable detail" }
+  //   warnings        — non-blocking issues (array of strings)
+  //   blocking_errors — errors that prevent full output (array of strings)
+  "quality": {
+    "status": "{{quality_status}}",
+    "checks": [],
+    "warnings": [],
+    "blocking_errors": []
+  }
+}

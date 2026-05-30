@@ -1,8 +1,9 @@
 # Transcription Pipeline
+> Version 2.6.0 — Mandatory Pipeline Edition
 
-Code-first YouTube transcription pipeline with 3 cascading strategies, QC, cleanup, LLM summary, vault integration, and interlinking. No subagent overhead.
+Code-first YouTube transcription pipeline with 3 cascading strategies, QC, cleanup, LLM summary, vault integration, Phase 11 sanity check, and interlinking. No subagent overhead.
 
-**Philosophy:** Everything that can be done via code, MUST be done via code. Only LLM reasoning for summaries. No progress spam, no metadata in delivery — just the result.
+**Philosophy:** Everything that can be done via code, MUST be done via code. Only LLM reasoning for summaries. No progress spam, no metadata in delivery — just the result. Every phase is mandatory — no shortcuts.
 
 ## Quick Start
 
